@@ -16,6 +16,7 @@
 #ifndef DEFAULT_PAYLOAD_FILE_NAME
 #define DEFAULT_PAYLOAD_FILE_NAME   "SafeB9SInstaller.bin"
 #endif
+#define CONFIG11_BASE   0x1EC40000
 
 typedef union ExploitChainLayout {
     u8 workBuffer[0x10000];
@@ -79,9 +80,11 @@ static Result doExploitChain(
         gspSetLcdFill(gspHandle, true, 255, 255, 255);
 
         prepareBlobLayout(&layout->blobLayout, gspHandle, khc3dsBin, khc3dsBinSize);
-
-        TRY_ALL(smpwn(&srvHandle, ctx));
-        //TRY(smPartiallyCleanupSmpwn(ctx));
+	
+	if(kernelVersionMinor < 58) {
+		TRY_ALL(smpwn(&srvHandle, ctx));
+		//TRY(smPartiallyCleanupSmpwn(ctx));
+	}
 
         // Fill top screen blue-ish.
         gspSetLcdFill(gspHandle, true, 128, 128, 200);
@@ -96,11 +99,17 @@ static Result doExploitChain(
             *(vu32 *)(KHC3DS_MAP_ADDR + 0xA2000 + 0x140) = 0;
             __dsb();
         } else {
-            TRY(smRemoveRestrictions(ctx));
+		if(kernelVersionMinor < 58) {
+			TRY(smRemoveRestrictions(ctx));
 
-            // We now have access to all services, and can spawn new sessions of srv:pm
-            // Exploit spi with that.
-            TRY(spipwn(srvHandle));
+			// We now have access to all services, and can spawn new sessions of srv:pm
+			// Exploit spi with that.
+			TRY(spipwn(srvHandle)); 		//-- no need if kversion 58+, we just add the gpuprot mapping to accessdesc
+		}
+		else{
+			*(vu32 *)(CONFIG11_BASE + 0x140) = 0;   // now poke gpuprot to 0 to unlock k11
+		}
+		
         }
 
         // We can now GPU DMA the kernel. Let's map the L2 table we have prepared
